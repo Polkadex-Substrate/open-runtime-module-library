@@ -7,7 +7,7 @@ mod tests;
 
 pub use frame_benchmarking::{
 	benchmarking, whitelisted_caller, BenchmarkBatch, BenchmarkConfig, BenchmarkList, BenchmarkMetadata,
-	BenchmarkParameter, BenchmarkResults, Benchmarking, BenchmarkingSetup,
+	BenchmarkParameter, BenchmarkResult, Benchmarking, BenchmarkingSetup,
 };
 #[cfg(feature = "std")]
 pub use frame_benchmarking::{Analysis, BenchmarkSelector};
@@ -626,7 +626,7 @@ macro_rules! benchmark_backend {
 // Every variant must implement [`BenchmarkingSetup`].
 //
 // ```nocompile
-// 
+//
 // struct Transfer;
 // impl BenchmarkingSetup for Transfer { ... }
 //
@@ -692,7 +692,7 @@ macro_rules! impl_benchmark {
 	) => {
 		pub struct Benchmark;
 
-		impl $crate::Benchmarking<$crate::BenchmarkResults> for Benchmark {
+		impl $crate::Benchmarking<$crate::BenchmarkResult> for Benchmark {
 			fn benchmarks(extra: bool) -> $crate::Vec<$crate::BenchmarkMetadata> {
 				let mut all_names = $crate::vec![ $( stringify!($name).as_ref() ),* ];
 				if !extra {
@@ -721,7 +721,7 @@ macro_rules! impl_benchmark {
 				whitelist: &[$crate::TrackedStorageKey],
 				verify: bool,
 				internal_repeats: u32,
-			) -> Result<$crate::Vec<$crate::BenchmarkResults>, &'static str> {
+			) -> Result<$crate::Vec<$crate::BenchmarkResult>, &'static str> {
 				// Map the input to the selected benchmark.
 				let extrinsic = $crate::sp_std::str::from_utf8(extrinsic)
 					.map_err(|_| "`extrinsic` is not a valid utf8 string!")?;
@@ -739,7 +739,7 @@ macro_rules! impl_benchmark {
 				whitelist.push(whitelisted_caller_key.into());
 				$crate::benchmarking::set_whitelist(whitelist);
 
-				let mut results: $crate::Vec<$crate::BenchmarkResults> = $crate::Vec::new();
+				let mut results: $crate::Vec<$crate::BenchmarkResult> = $crate::Vec::new();
 
 				// Always do at least one internal repeat...
 				for _ in 0 .. internal_repeats.max(1) {
@@ -807,7 +807,7 @@ macro_rules! impl_benchmark {
 						$crate::benchmarking::get_read_and_written_keys()
 					};
 
-					results.push($crate::BenchmarkResults {
+					results.push($crate::BenchmarkResult {
 						components: c.to_vec(),
 						extrinsic_time: elapsed_extrinsic,
 						storage_root_time: elapsed_storage_root,
