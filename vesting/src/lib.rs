@@ -201,8 +201,8 @@ pub mod module {
 			self.vesting
 				.iter()
 				.for_each(|(who, start, period, period_count, per_period)| {
-					let total = *per_period * Into::<BalanceOf<T>>::into(*period_count);
 
+					let mut total = Zero::zero();
 					// Check if the who already has vesting then push to it, if not, create new
 					let mut bounded_schedule: BoundedVec<VestingScheduleOf<T>, T::MaxVestingSchedules> = VestingSchedules::<T>::get(who);
 					bounded_schedule.try_push(VestingSchedule {
@@ -211,6 +211,10 @@ pub mod module {
 							period_count: *period_count,
 							per_period: *per_period,
 					}).expect("Max vesting schedules exceeded");
+
+					for schedule in bounded_schedule.clone() {
+						total = total + schedule.per_period * Into::<BalanceOf<T>>::into(schedule.period_count);
+					}
 
 					assert!(
 						T::Currency::free_balance(who) >= total,
