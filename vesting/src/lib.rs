@@ -203,13 +203,14 @@ pub mod module {
 				.for_each(|(who, start, period, period_count, per_period)| {
 					let total = *per_period * Into::<BalanceOf<T>>::into(*period_count);
 
-					let bounded_schedule: BoundedVec<VestingScheduleOf<T>, T::MaxVestingSchedules> =
-						vec![VestingSchedule {
+					// Check if the who already has vesting then append to it, if not, create new
+					let bounded_schedule: BoundedVec<VestingScheduleOf<T>, T::MaxVestingSchedules> = VestingSchedules::<T>::get(who);
+					bounded_schedule.push(VestingSchedule {
 							start: *start,
 							period: *period,
 							period_count: *period_count,
 							per_period: *per_period,
-						}]
+					})
 						.try_into()
 						.expect("Max vesting schedules exceeded");
 
