@@ -2,7 +2,10 @@
 
 use super::*;
 
-use frame_support::{construct_runtime, parameter_types};
+use frame_support::{
+	construct_runtime, parameter_types,
+	traits::{Everything, SortedMembers},
+};
 use sp_core::H256;
 use sp_runtime::{
 	testing::Header,
@@ -42,7 +45,7 @@ impl frame_system::Config for Test {
 	type OnNewAccount = ();
 	type OnKilledAccount = ();
 	type DbWeight = ();
-	type BaseCallFilter = ();
+	type BaseCallFilter = Everything;
 	type SystemWeightInfo = ();
 	type SS58Prefix = ();
 	type OnSetCode = ();
@@ -71,6 +74,19 @@ parameter_types! {
 	pub const MinimumCount: u32 = 3;
 	pub const ExpiresIn: u32 = 600;
 	pub const RootOperatorAccountId: AccountId = 4;
+	pub static OracleMembers: Vec<AccountId> = vec![1, 2, 3];
+}
+
+pub struct Members;
+
+impl SortedMembers<AccountId> for Members {
+	fn sorted_members() -> Vec<AccountId> {
+		OracleMembers::get()
+	}
+}
+
+parameter_types! {
+	pub const MaxHasDispatchedSize: u32 = 100;
 }
 
 impl Config for Test {
@@ -81,7 +97,9 @@ impl Config for Test {
 	type OracleKey = Key;
 	type OracleValue = Value;
 	type RootOperatorAccountId = RootOperatorAccountId;
+	type Members = Members;
 	type WeightInfo = ();
+	type MaxHasDispatchedSize = MaxHasDispatchedSize;
 }
 
 type UncheckedExtrinsic = frame_system::mocking::MockUncheckedExtrinsic<Test>;
@@ -94,20 +112,14 @@ construct_runtime!(
 		UncheckedExtrinsic = UncheckedExtrinsic,
 	{
 		System: frame_system::{Pallet, Call, Storage, Config, Event<T>},
-		ModuleOracle: oracle::{Pallet, Storage, Call, Config<T>, Event<T>},
+		ModuleOracle: oracle::{Pallet, Storage, Call, Event<T>},
 	}
 );
 
 // This function basically just builds a genesis storage key/value store
 // according to our desired mockup.
 pub fn new_test_ext() -> sp_io::TestExternalities {
-	let mut storage = frame_system::GenesisConfig::default().build_storage::<Test>().unwrap();
-
-	let _ = oracle::GenesisConfig::<Test> {
-		members: vec![1, 2, 3].into(),
-		phantom: Default::default(),
-	}
-	.assimilate_storage(&mut storage);
+	let storage = frame_system::GenesisConfig::default().build_storage::<Test>().unwrap();
 
 	let mut t: sp_io::TestExternalities = storage.into();
 

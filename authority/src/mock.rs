@@ -4,11 +4,7 @@
 
 use super::*;
 use codec::{Decode, Encode};
-use frame_support::{
-	parameter_types,
-	traits::{OnFinalize, OnInitialize},
-	weights::Weight,
-};
+use frame_support::{parameter_types, traits::Everything, weights::Weight};
 use frame_system::{ensure_root, ensure_signed, EnsureRoot};
 use sp_core::H256;
 use sp_runtime::{
@@ -48,7 +44,7 @@ impl frame_system::Config for Runtime {
 	type OnNewAccount = ();
 	type OnKilledAccount = ();
 	type DbWeight = ();
-	type BaseCallFilter = ();
+	type BaseCallFilter = Everything;
 	type SystemWeightInfo = ();
 	type SS58Prefix = ();
 	type OnSetCode = ();
@@ -68,7 +64,7 @@ impl pallet_scheduler::Config for Runtime {
 	type WeightInfo = ();
 }
 
-#[derive(Clone, Encode, Decode, Eq, PartialEq, Ord, PartialOrd, Debug)]
+#[derive(Clone, Encode, Decode, Eq, PartialEq, Ord, PartialOrd, Debug, TypeInfo)]
 pub enum MockAsOriginId {
 	Root,
 	Account1,
@@ -125,7 +121,7 @@ impl AsOriginId<Origin, OriginCaller> for MockAsOriginId {
 	}
 	fn check_dispatch_from(&self, origin: Origin) -> DispatchResult {
 		ensure_root(origin.clone()).or_else(|_| {
-			if let OriginCaller::authority(ref sign) = origin.caller() {
+			if let OriginCaller::Authority(ref sign) = origin.caller() {
 				if sign.origin == Box::new(Origin::root().caller().clone()) {
 					return Ok(());
 				} else {
@@ -138,7 +134,11 @@ impl AsOriginId<Origin, OriginCaller> for MockAsOriginId {
 				MockAsOriginId::Account1 => ensure_signed(origin)? == 1,
 				MockAsOriginId::Account2 => ensure_signed(origin)? == 2,
 			};
-			return if ok { Ok(()) } else { Err(BadOrigin.into()) };
+			if ok {
+				Ok(())
+			} else {
+				Err(BadOrigin.into())
+			}
 		})
 	}
 }

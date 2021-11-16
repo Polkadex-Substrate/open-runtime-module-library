@@ -3,7 +3,10 @@
 #![cfg(test)]
 
 use super::*;
-use frame_support::{construct_runtime, parameter_types, traits::EnsureOrigin};
+use frame_support::{
+	construct_runtime, parameter_types,
+	traits::{EnsureOrigin, Everything},
+};
 use frame_system::RawOrigin;
 use sp_core::H256;
 use sp_runtime::{testing::Header, traits::IdentityLookup};
@@ -35,7 +38,7 @@ impl frame_system::Config for Runtime {
 	type OnNewAccount = ();
 	type OnKilledAccount = ();
 	type DbWeight = ();
-	type BaseCallFilter = ();
+	type BaseCallFilter = Everything;
 	type SystemWeightInfo = ();
 	type SS58Prefix = ();
 	type OnSetCode = ();
@@ -45,7 +48,6 @@ type Balance = u64;
 
 parameter_types! {
 	pub const ExistentialDeposit: u64 = 1;
-	pub const MinVestedTransfer: u64 = 5;
 }
 
 impl pallet_balances::Config for Runtime {
@@ -55,6 +57,8 @@ impl pallet_balances::Config for Runtime {
 	type ExistentialDeposit = ExistentialDeposit;
 	type AccountStore = frame_system::Pallet<Runtime>;
 	type MaxLocks = ();
+	type MaxReserves = ();
+	type ReserveIdentifier = [u8; 8];
 	type WeightInfo = ();
 }
 
@@ -76,12 +80,28 @@ impl EnsureOrigin<Origin> for EnsureAliceOrBob {
 	}
 }
 
+parameter_types! {
+	pub const MaxVestingSchedule: u32 = 2;
+	pub const MinVestedTransfer: u64 = 5;
+	pub static MockBlockNumberProvider: u64 = 0;
+}
+
+impl BlockNumberProvider for MockBlockNumberProvider {
+	type BlockNumber = u64;
+
+	fn current_block_number() -> Self::BlockNumber {
+		Self::get()
+	}
+}
+
 impl Config for Runtime {
 	type Event = Event;
 	type Currency = PalletBalances;
 	type MinVestedTransfer = MinVestedTransfer;
 	type VestedTransferOrigin = EnsureAliceOrBob;
 	type WeightInfo = ();
+	type MaxVestingSchedules = MaxVestingSchedule;
+	type BlockNumberProvider = MockBlockNumberProvider;
 }
 
 type UncheckedExtrinsic = frame_system::mocking::MockUncheckedExtrinsic<Runtime>;

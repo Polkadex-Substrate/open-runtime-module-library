@@ -2,7 +2,7 @@
 
 #![cfg(test)]
 
-use frame_support::{construct_runtime, parameter_types};
+use frame_support::{construct_runtime, parameter_types, traits::Everything};
 use sp_core::H256;
 use sp_runtime::{testing::Header, traits::IdentityLookup};
 
@@ -37,10 +37,15 @@ impl frame_system::Config for Runtime {
 	type OnNewAccount = ();
 	type OnKilledAccount = ();
 	type DbWeight = ();
-	type BaseCallFilter = ();
+	type BaseCallFilter = Everything;
 	type SystemWeightInfo = ();
 	type SS58Prefix = ();
 	type OnSetCode = ();
+}
+
+parameter_types! {
+	pub const MaxClassMetadata: u32 = 1;
+	pub const MaxTokenMetadata: u32 = 1;
 }
 
 impl Config for Runtime {
@@ -48,6 +53,8 @@ impl Config for Runtime {
 	type TokenId = u64;
 	type ClassData = ();
 	type TokenData = ();
+	type MaxClassMetadata = MaxClassMetadata;
+	type MaxTokenMetadata = MaxTokenMetadata;
 }
 
 type UncheckedExtrinsic = frame_system::mocking::MockUncheckedExtrinsic<Runtime>;

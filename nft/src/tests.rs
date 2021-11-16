@@ -55,7 +55,7 @@ fn mint_should_fail() {
 		});
 		assert_noop!(
 			NonFungibleTokenModule::mint(&BOB, CLASS_ID, vec![1], ()),
-			Error::<Runtime>::NumOverflow
+			ArithmeticError::Overflow,
 		);
 
 		NextTokenId::<Runtime>::mutate(CLASS_ID, |id| *id = <Runtime as Config>::TokenId::max_value());
@@ -136,7 +136,7 @@ fn burn_should_fail() {
 		});
 		assert_noop!(
 			NonFungibleTokenModule::burn(&BOB, (CLASS_ID, TOKEN_ID)),
-			Error::<Runtime>::NumOverflow
+			ArithmeticError::Overflow,
 		);
 	});
 }
@@ -148,8 +148,8 @@ fn destroy_class_should_work() {
 		assert_ok!(NonFungibleTokenModule::mint(&BOB, CLASS_ID, vec![1], ()));
 		assert_ok!(NonFungibleTokenModule::burn(&BOB, (CLASS_ID, TOKEN_ID)));
 		assert_ok!(NonFungibleTokenModule::destroy_class(&ALICE, CLASS_ID));
-		assert_eq!(Classes::<Runtime>::contains_key(CLASS_ID), false);
-		assert_eq!(NextTokenId::<Runtime>::contains_key(CLASS_ID), false);
+		assert!(!Classes::<Runtime>::contains_key(CLASS_ID));
+		assert!(!NextTokenId::<Runtime>::contains_key(CLASS_ID));
 	});
 }
 
@@ -175,6 +175,21 @@ fn destroy_class_should_fail() {
 
 		assert_ok!(NonFungibleTokenModule::burn(&BOB, (CLASS_ID, TOKEN_ID)));
 		assert_ok!(NonFungibleTokenModule::destroy_class(&ALICE, CLASS_ID));
-		assert_eq!(Classes::<Runtime>::contains_key(CLASS_ID), false);
+		assert!(!Classes::<Runtime>::contains_key(CLASS_ID));
+	});
+}
+
+#[test]
+fn exceeding_max_metadata_should_fail() {
+	ExtBuilder::default().build().execute_with(|| {
+		assert_noop!(
+			NonFungibleTokenModule::create_class(&ALICE, vec![1, 2], ()),
+			Error::<Runtime>::MaxMetadataExceeded
+		);
+		assert_ok!(NonFungibleTokenModule::create_class(&ALICE, vec![1], ()));
+		assert_noop!(
+			NonFungibleTokenModule::mint(&BOB, CLASS_ID, vec![1, 2], ()),
+			Error::<Runtime>::MaxMetadataExceeded
+		);
 	});
 }

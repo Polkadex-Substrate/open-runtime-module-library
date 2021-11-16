@@ -5,11 +5,16 @@
 use super::*;
 use frame_support::{
 	construct_runtime, parameter_types,
-	traits::{ChangeMembers, Contains, ContainsLengthBound, SaturatingCurrencyToVote},
+	traits::{ChangeMembers, ContainsLengthBound, Everything, GenesisBuild, SaturatingCurrencyToVote, SortedMembers},
+	PalletId,
 };
 use orml_traits::parameter_type_with_key;
 use sp_core::H256;
-use sp_runtime::{testing::Header, traits::IdentityLookup, AccountId32, Permill};
+use sp_runtime::{
+	testing::Header,
+	traits::{AccountIdConversion, IdentityLookup},
+	AccountId32, Permill,
+};
 use sp_std::cell::RefCell;
 
 pub type AccountId = AccountId32;
@@ -21,9 +26,12 @@ pub const BTC: CurrencyId = 2;
 pub const ETH: CurrencyId = 3;
 pub const ALICE: AccountId = AccountId32::new([0u8; 32]);
 pub const BOB: AccountId = AccountId32::new([1u8; 32]);
-pub const TREASURY_ACCOUNT: AccountId = AccountId32::new([2u8; 32]);
+pub const CHARLIE: AccountId = AccountId32::new([2u8; 32]);
+pub const DAVE: AccountId = AccountId32::new([3u8; 32]);
+pub const TREASURY_ACCOUNT: AccountId = AccountId32::new([4u8; 32]);
 pub const ID_1: LockIdentifier = *b"1       ";
 pub const ID_2: LockIdentifier = *b"2       ";
+pub const ID_3: LockIdentifier = *b"3       ";
 
 use crate as tokens;
 
@@ -51,7 +59,7 @@ impl frame_system::Config for Runtime {
 	type OnNewAccount = ();
 	type OnKilledAccount = ();
 	type DbWeight = ();
-	type BaseCallFilter = ();
+	type BaseCallFilter = Everything;
 	type SystemWeightInfo = ();
 	type SS58Prefix = ();
 	type OnSetCode = ();
@@ -68,7 +76,7 @@ thread_local! {
 }
 
 pub struct TenToFourteen;
-impl Contains<AccountId> for TenToFourteen {
+impl SortedMembers<AccountId> for TenToFourteen {
 	fn sorted_members() -> Vec<AccountId> {
 		TEN_TO_FOURTEEN.with(|v| v.borrow().clone())
 	}
@@ -98,6 +106,7 @@ parameter_types! {
 	pub const Burn: Permill = Permill::from_percent(50);
 	pub const TreasuryPalletId: PalletId = PalletId(*b"py/trsry");
 	pub const GetTokenId: CurrencyId = DOT;
+	pub const MaxApprovals: u32 = 100;
 }
 
 impl pallet_treasury::Config for Runtime {
@@ -114,6 +123,7 @@ impl pallet_treasury::Config for Runtime {
 	type BurnDestination = ();
 	type SpendFunds = ();
 	type WeightInfo = ();
+	type MaxApprovals = MaxApprovals;
 }
 
 thread_local! {
@@ -193,8 +203,16 @@ impl pallet_elections_phragmen::Config for Runtime {
 	type WeightInfo = ();
 }
 
+pub struct MockDustRemovalWhitelist;
+impl Contains<AccountId> for MockDustRemovalWhitelist {
+	fn contains(a: &AccountId) -> bool {
+		*a == DAVE || *a == DustReceiver::get()
+	}
+}
+
 parameter_type_with_key! {
 	pub ExistentialDeposits: |currency_id: CurrencyId| -> Balance {
+		#[allow(clippy::match_ref_pats)] // false positive
 		match currency_id {
 			&BTC => 1,
 			&DOT => 2,
@@ -204,7 +222,8 @@ parameter_type_with_key! {
 }
 
 parameter_types! {
-	pub DustAccount: AccountId = PalletId(*b"orml/dst").into_account();
+	pub DustReceiver: AccountId = PalletId(*b"orml/dst").into_account();
+	pub MaxLocks: u32 = 2;
 }
 
 impl Config for Runtime {
@@ -214,7 +233,9 @@ impl Config for Runtime {
 	type CurrencyId = CurrencyId;
 	type WeightInfo = ();
 	type ExistentialDeposits = ExistentialDeposits;
-	type OnDust = TransferDust<Runtime, DustAccount>;
+	type OnDust = TransferDust<Runtime, DustReceiver>;
+	type MaxLocks = MaxLocks;
+	type DustRemovalWhitelist = MockDustRemovalWhitelist;
 }
 pub type TreasuryCurrencyAdapter = <Runtime as pallet_treasury::Config>::Currency;
 
@@ -235,32 +256,23 @@ construct_runtime!(
 );
 
 pub struct ExtBuilder {
-	endowed_accounts: Vec<(AccountId, CurrencyId, Balance)>,
+	balances: Vec<(AccountId, CurrencyId, Balance)>,
 	treasury_genesis: bool,
 }
 
 impl Default for ExtBuilder {
 	fn default() -> Self {
 		Self {
-			endowed_accounts: vec![],
+			balances: vec![],
 			treasury_genesis: false,
 		}
 	}
 }
 
 impl ExtBuilder {
-	pub fn balances(mut self, endowed_accounts: Vec<(AccountId, CurrencyId, Balance)>) -> Self {
-		self.endowed_accounts = endowed_accounts;
+	pub fn balances(mut self, mut balances: Vec<(AccountId, CurrencyId, Balance)>) -> Self {
+		self.balances.append(&mut balances);
 		self
-	}
-
-	pub fn one_hundred_for_alice_n_bob(self) -> Self {
-		self.balances(vec![(ALICE, DOT, 100), (BOB, DOT, 100)])
-	}
-
-	pub fn one_hundred_for_treasury_account(mut self) -> Self {
-		self.treasury_genesis = true;
-		self.balances(vec![(TREASURY_ACCOUNT, DOT, 100)])
 	}
 
 	pub fn build(self) -> sp_io::TestExternalities {
@@ -269,15 +281,13 @@ impl ExtBuilder {
 			.unwrap();
 
 		tokens::GenesisConfig::<Runtime> {
-			endowed_accounts: self.endowed_accounts,
+			balances: self.balances,
 		}
 		.assimilate_storage(&mut t)
 		.unwrap();
 
 		if self.treasury_genesis {
-			pallet_treasury::GenesisConfig::default()
-				.assimilate_storage::<Runtime, _>(&mut t)
-				.unwrap();
+			GenesisBuild::<Runtime>::assimilate_storage(&pallet_treasury::GenesisConfig::default(), &mut t).unwrap();
 
 			pallet_elections_phragmen::GenesisConfig::<Runtime> {
 				members: vec![(TREASURY_ACCOUNT, 10)],

@@ -26,21 +26,24 @@ use frame_support::{
 		schedule::{DispatchTime, Named as ScheduleNamed, Priority},
 		EnsureOrigin, Get, IsType, OriginTrait,
 	},
-	weights::GetDispatchInfo,
+	weights::{DispatchClass, GetDispatchInfo, Pays},
 };
-use frame_system::pallet_prelude::*;
+use frame_system::{pallet_prelude::*, EnsureOneOf, EnsureRoot, EnsureSigned};
+use scale_info::TypeInfo;
 use sp_runtime::{
-	traits::{CheckedSub, Dispatchable, Saturating},
-	DispatchError, DispatchResult, RuntimeDebug,
+	traits::{CheckedSub, Dispatchable, Hash, Saturating},
+	ArithmeticError, DispatchError, DispatchResult, Either, RuntimeDebug,
 };
 use sp_std::prelude::*;
 
-mod default_weight;
 mod mock;
 mod tests;
+mod weights;
+
+pub use weights::WeightInfo;
 
 /// A delayed origin. Can only be dispatched via `dispatch_as` with a delay.
-#[derive(PartialEq, Eq, Clone, RuntimeDebug, Encode, Decode)]
+#[derive(PartialEq, Eq, Clone, RuntimeDebug, Encode, Decode, TypeInfo)]
 pub struct DelayedOrigin<BlockNumber, PalletsOrigin> {
 	/// Number of blocks that this call have been delayed.
 	pub delay: BlockNumber,
@@ -120,16 +123,8 @@ pub use module::*;
 pub mod module {
 	use super::*;
 
-	pub trait WeightInfo {
-		fn dispatch_as() -> Weight;
-		fn schedule_dispatch_without_delay() -> Weight;
-		fn schedule_dispatch_with_delay() -> Weight;
-		fn fast_track_scheduled_dispatch() -> Weight;
-		fn delay_scheduled_dispatch() -> Weight;
-		fn cancel_scheduled_dispatch() -> Weight;
-	}
-
 	/// Origin for the authority module.
+	#[pallet::origin]
 	pub type Origin<T> = DelayedOrigin<<T as frame_system::Config>::BlockNumber, <T as Config>::PalletsOrigin>;
 	pub(crate) type CallOf<T> = <T as Config>::Call;
 
@@ -170,8 +165,6 @@ pub mod module {
 
 	#[pallet::error]
 	pub enum Error<T> {
-		/// Calculation overflow.
-		Overflow,
 		/// Failed to schedule a task.
 		FailedToSchedule,
 		/// Failed to cancel a task.
@@ -180,6 +173,12 @@ pub mod module {
 		FailedToFastTrack,
 		/// Failed to delay a task.
 		FailedToDelay,
+		/// Call is not authorized.
+		CallNotAuthorized,
+		/// Triggering the call is not permitted.
+		TriggerCallNotPermitted,
+		/// Call weight bound is wrong.
+		WrongCallWeightBound,
 	}
 
 	#[pallet::event]
@@ -195,11 +194,21 @@ pub mod module {
 		Delayed(T::PalletsOrigin, ScheduleTaskIndex, T::BlockNumber),
 		/// A scheduled call is cancelled. [origin, index]
 		Cancelled(T::PalletsOrigin, ScheduleTaskIndex),
+		/// A call is authorized. \[hash, caller\]
+		AuthorizedCall(T::Hash, Option<T::AccountId>),
+		/// An authorized call was removed. \[hash\]
+		RemovedAuthorizedCall(T::Hash),
+		/// An authorized call was triggered. \[hash, caller\]
+		TriggeredCallBy(T::Hash, T::AccountId),
 	}
 
 	#[pallet::storage]
 	#[pallet::getter(fn next_task_index)]
 	pub type NextTaskIndex<T: Config> = StorageValue<_, ScheduleTaskIndex, ValueQuery>;
+
+	#[pallet::storage]
+	#[pallet::getter(fn saved_calls)]
+	pub type SavedCalls<T: Config> = StorageMap<_, Identity, T::Hash, (CallOf<T>, Option<T::AccountId>), OptionQuery>;
 
 	#[pallet::pallet]
 	pub struct Pallet<T>(_);
@@ -214,17 +223,13 @@ pub mod module {
 			let info = call.get_dispatch_info();
 			(T::WeightInfo::dispatch_as().saturating_add(info.weight), info.class)
 		})]
-		pub fn dispatch_as(
-			origin: OriginFor<T>,
-			as_origin: T::AsOriginId,
-			call: Box<CallOf<T>>,
-		) -> DispatchResultWithPostInfo {
+		pub fn dispatch_as(origin: OriginFor<T>, as_origin: T::AsOriginId, call: Box<CallOf<T>>) -> DispatchResult {
 			as_origin.check_dispatch_from(origin)?;
 
 			let e = call.dispatch(as_origin.into_origin().into());
 
 			Self::deposit_event(Event::Dispatched(e.map(|_| ()).map_err(|e| e.error)));
-			Ok(().into())
+			Ok(())
 		}
 
 		/// Schedule a dispatchable to be dispatched at later block.
@@ -236,17 +241,17 @@ pub mod module {
 			priority: Priority,
 			with_delayed_origin: bool,
 			call: Box<CallOf<T>>,
-		) -> DispatchResultWithPostInfo {
+		) -> DispatchResult {
 			T::AuthorityConfig::check_schedule_dispatch(origin.clone(), priority)?;
 
 			let id = NextTaskIndex::<T>::mutate(|id| -> sp_std::result::Result<ScheduleTaskIndex, DispatchError> {
 				let current_id = *id;
-				*id = id.checked_add(1).ok_or(Error::<T>::Overflow)?;
+				*id = id.checked_add(1).ok_or(ArithmeticError::Overflow)?;
 				Ok(current_id)
 			})?;
 			let now = frame_system::Pallet::<T>::block_number();
 			let delay = match when {
-				DispatchTime::At(x) => x.checked_sub(&now).ok_or(Error::<T>::Overflow)?,
+				DispatchTime::At(x) => x.checked_sub(&now).ok_or(ArithmeticError::Overflow)?,
 				DispatchTime::After(x) => x,
 			};
 			let schedule_origin = if with_delayed_origin {
@@ -272,20 +277,20 @@ pub mod module {
 			.map_err(|_| Error::<T>::FailedToSchedule)?;
 
 			Self::deposit_event(Event::Scheduled(pallets_origin, id));
-			Ok(().into())
+			Ok(())
 		}
 
 		/// Fast track a scheduled dispatchable.
 		#[pallet::weight(T::WeightInfo::fast_track_scheduled_dispatch())]
 		pub fn fast_track_scheduled_dispatch(
 			origin: OriginFor<T>,
-			initial_origin: T::PalletsOrigin,
+			initial_origin: Box<T::PalletsOrigin>,
 			task_id: ScheduleTaskIndex,
 			when: DispatchTime<T::BlockNumber>,
-		) -> DispatchResultWithPostInfo {
+		) -> DispatchResult {
 			let now = frame_system::Pallet::<T>::block_number();
 			let new_delay = match when {
-				DispatchTime::At(x) => x.checked_sub(&now).ok_or(Error::<T>::Overflow)?,
+				DispatchTime::At(x) => x.checked_sub(&now).ok_or(ArithmeticError::Overflow)?,
 				DispatchTime::After(x) => x,
 			};
 			let dispatch_at = match when {
@@ -297,18 +302,18 @@ pub mod module {
 			T::Scheduler::reschedule_named((&initial_origin, task_id).encode(), when)
 				.map_err(|_| Error::<T>::FailedToFastTrack)?;
 
-			Self::deposit_event(Event::FastTracked(initial_origin, task_id, dispatch_at));
-			Ok(().into())
+			Self::deposit_event(Event::FastTracked(*initial_origin, task_id, dispatch_at));
+			Ok(())
 		}
 
 		/// Delay a scheduled dispatchable.
 		#[pallet::weight(T::WeightInfo::delay_scheduled_dispatch())]
 		pub fn delay_scheduled_dispatch(
 			origin: OriginFor<T>,
-			initial_origin: T::PalletsOrigin,
+			initial_origin: Box<T::PalletsOrigin>,
 			task_id: ScheduleTaskIndex,
 			additional_delay: T::BlockNumber,
-		) -> DispatchResultWithPostInfo {
+		) -> DispatchResult {
 			T::AuthorityConfig::check_delay_schedule(origin, &initial_origin)?;
 
 			T::Scheduler::reschedule_named(
@@ -320,22 +325,83 @@ pub mod module {
 			let now = frame_system::Pallet::<T>::block_number();
 			let dispatch_at = now.saturating_add(additional_delay);
 
-			Self::deposit_event(Event::Delayed(initial_origin, task_id, dispatch_at));
-			Ok(().into())
+			Self::deposit_event(Event::Delayed(*initial_origin, task_id, dispatch_at));
+			Ok(())
 		}
 
 		/// Cancel a scheduled dispatchable.
 		#[pallet::weight(T::WeightInfo::cancel_scheduled_dispatch())]
 		pub fn cancel_scheduled_dispatch(
 			origin: OriginFor<T>,
-			initial_origin: T::PalletsOrigin,
+			initial_origin: Box<T::PalletsOrigin>,
 			task_id: ScheduleTaskIndex,
-		) -> DispatchResultWithPostInfo {
+		) -> DispatchResult {
 			T::AuthorityConfig::check_cancel_schedule(origin, &initial_origin)?;
 			T::Scheduler::cancel_named((&initial_origin, task_id).encode()).map_err(|_| Error::<T>::FailedToCancel)?;
 
-			Self::deposit_event(Event::Cancelled(initial_origin, task_id));
-			Ok(().into())
+			Self::deposit_event(Event::Cancelled(*initial_origin, task_id));
+			Ok(())
+		}
+
+		#[pallet::weight(T::WeightInfo::authorize_call())]
+		pub fn authorize_call(
+			origin: OriginFor<T>,
+			call: Box<CallOf<T>>,
+			caller: Option<T::AccountId>,
+		) -> DispatchResult {
+			ensure_root(origin)?;
+			let hash = T::Hashing::hash_of(&call);
+			SavedCalls::<T>::insert(hash, (call, caller.clone()));
+			Self::deposit_event(Event::AuthorizedCall(hash, caller));
+			Ok(())
+		}
+
+		#[pallet::weight(T::WeightInfo::remove_authorized_call())]
+		pub fn remove_authorized_call(origin: OriginFor<T>, hash: T::Hash) -> DispatchResult {
+			let root_or_sigend =
+				EnsureOneOf::<T::AccountId, EnsureRoot<T::AccountId>, EnsureSigned<T::AccountId>>::ensure_origin(
+					origin,
+				)?;
+
+			SavedCalls::<T>::try_mutate_exists(hash, |maybe_call| {
+				let (_, maybe_caller) = maybe_call.take().ok_or(Error::<T>::CallNotAuthorized)?;
+				match root_or_sigend {
+					Either::Left(_) => {} // root, do nothing
+					Either::Right(who) => {
+						// signed, ensure it's the caller
+						let caller = maybe_caller.ok_or(Error::<T>::CallNotAuthorized)?;
+						ensure!(who == caller, Error::<T>::CallNotAuthorized);
+					}
+				}
+				Self::deposit_event(Event::RemovedAuthorizedCall(hash));
+				Ok(())
+			})
+		}
+
+		#[pallet::weight((
+			T::WeightInfo::trigger_call().saturating_add(*call_weight_bound),
+			DispatchClass::Operational,
+		))]
+		pub fn trigger_call(
+			origin: OriginFor<T>,
+			hash: T::Hash,
+			#[pallet::compact] call_weight_bound: Weight,
+		) -> DispatchResultWithPostInfo {
+			let who = ensure_signed(origin)?;
+			SavedCalls::<T>::try_mutate_exists(hash, |maybe_call| {
+				let (call, maybe_caller) = maybe_call.take().ok_or(Error::<T>::CallNotAuthorized)?;
+				if let Some(caller) = maybe_caller {
+					ensure!(who == caller, Error::<T>::TriggerCallNotPermitted);
+				}
+				ensure!(
+					call_weight_bound >= call.get_dispatch_info().weight,
+					Error::<T>::WrongCallWeightBound
+				);
+				let result = call.dispatch(OriginFor::<T>::root());
+				Self::deposit_event(Event::TriggeredCallBy(hash, who));
+				Self::deposit_event(Event::Dispatched(result.map(|_| ()).map_err(|e| e.error)));
+				Ok(Pays::No.into())
+			})
 		}
 	}
 }

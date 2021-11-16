@@ -4,7 +4,7 @@
 
 use super::*;
 use frame_benchmarking::account;
-use frame_support::{assert_err, assert_ok, construct_runtime, ensure};
+use frame_support::{assert_err, assert_ok, construct_runtime, ensure, traits::Everything};
 use frame_system::RawOrigin;
 use sp_runtime::{
 	testing::{Header, H256},
@@ -73,7 +73,7 @@ impl frame_system::Config for Test {
 	type AccountData = ();
 	type OnNewAccount = ();
 	type OnKilledAccount = ();
-	type BaseCallFilter = ();
+	type BaseCallFilter = Everything;
 	type SystemWeightInfo = ();
 	type SS58Prefix = ();
 	type OnSetCode = ();
@@ -100,7 +100,6 @@ construct_runtime!(
 	{
 		System: frame_system::{Pallet, Call, Storage, Config, Event<T>},
 		Pallet: test::{Pallet, Call, Storage, Config},
-
 	}
 );
 
@@ -116,22 +115,17 @@ fn new_test_ext() -> sp_io::TestExternalities {
 runtime_benchmarks! {
 	{ Test, test }
 
-	_ {
-		// Define a common range for `b`.
-		let b in 1 .. 1000 => ();
-	}
-
 	set_value {
-		let b in ...;
+		let b in 1 .. 1000;
 		let caller = account::<AccountId>("caller", 0, 0);
-	}: _ (RawOrigin::Signed(caller), b.into())
+	}: _ (RawOrigin::Signed(caller), b)
 	verify {
 		assert_eq!(Pallet::value(), Some(b));
 	}
 
 	other_name {
-		let b in ...;
-	}: dummy (RawOrigin::None, b.into())
+		let b in 1 .. 1000;
+	}: dummy (RawOrigin::None, b)
 
 	sort_vector {
 		let x in 1 .. 10000;
@@ -140,15 +134,15 @@ runtime_benchmarks! {
 			m.push(i);
 		}
 	}: {
-		m.sort();
+		m.sort_unstable();
 	} verify {
 		ensure!(m[0] == 0, "You forgot to sort!")
 	}
 
 	bad_origin {
-		let b in ...;
+		let b in 1 .. 1000;
 		let caller = account::<AccountId>("caller", 0, 0);
-	}: dummy (RawOrigin::Signed(caller), b.into())
+	}: dummy (RawOrigin::Signed(caller), b)
 
 	bad_verify {
 		let x in 1 .. 10000;
@@ -249,10 +243,10 @@ fn benchmarks_macro_verify_works() {
 #[test]
 fn benchmarks_generate_unit_tests() {
 	new_test_ext().execute_with(|| {
-		assert_ok!(test_benchmark_set_value());
-		assert_ok!(test_benchmark_other_name());
-		assert_ok!(test_benchmark_sort_vector());
-		assert_err!(test_benchmark_bad_origin(), "Bad origin");
-		assert_err!(test_benchmark_bad_verify(), "You forgot to sort!");
+		assert_ok!(Benchmark::test_benchmark_set_value());
+		assert_ok!(Benchmark::test_benchmark_other_name());
+		assert_ok!(Benchmark::test_benchmark_sort_vector());
+		assert_err!(Benchmark::test_benchmark_bad_origin(), "Bad origin");
+		assert_err!(Benchmark::test_benchmark_bad_verify(), "You forgot to sort!");
 	});
 }

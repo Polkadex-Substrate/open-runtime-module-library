@@ -1,6 +1,9 @@
 use crate::arithmetic;
 use codec::{Codec, FullCodec};
-pub use frame_support::traits::{BalanceStatus, LockIdentifier};
+pub use frame_support::{
+	traits::{BalanceStatus, LockIdentifier},
+	transactional,
+};
 use sp_runtime::{
 	traits::{AtLeast32BitUnsigned, MaybeSerializeDeserialize},
 	DispatchError, DispatchResult,
@@ -15,10 +18,16 @@ use sp_std::{
 /// Abstraction over a fungible multi-currency system.
 pub trait MultiCurrency<AccountId> {
 	/// The currency identifier.
-	type CurrencyId: FullCodec + Eq + PartialEq + Copy + MaybeSerializeDeserialize + Debug;
+	type CurrencyId: FullCodec + Eq + PartialEq + Copy + MaybeSerializeDeserialize + Debug + scale_info::TypeInfo;
 
 	/// The balance of an account.
-	type Balance: AtLeast32BitUnsigned + FullCodec + Copy + MaybeSerializeDeserialize + Debug + Default;
+	type Balance: AtLeast32BitUnsigned
+		+ FullCodec
+		+ Copy
+		+ MaybeSerializeDeserialize
+		+ Debug
+		+ Default
+		+ scale_info::TypeInfo;
 
 	// Public immutables
 
@@ -79,7 +88,8 @@ pub trait MultiCurrencyExtended<AccountId>: MultiCurrency<AccountId> {
 		+ Copy
 		+ MaybeSerializeDeserialize
 		+ Debug
-		+ Default;
+		+ Default
+		+ scale_info::TypeInfo;
 
 	/// Add or remove abs(`by_amount`) from the balance of `who` under
 	/// `currency_id`. If positive `by_amount`, do add, else do remove.
@@ -340,4 +350,19 @@ pub trait OnDust<AccountId, CurrencyId, Balance> {
 
 impl<AccountId, CurrencyId, Balance> OnDust<AccountId, CurrencyId, Balance> for () {
 	fn on_dust(_: &AccountId, _: CurrencyId, _: Balance) {}
+}
+
+pub trait TransferAll<AccountId> {
+	fn transfer_all(source: &AccountId, dest: &AccountId) -> DispatchResult;
+}
+
+#[impl_trait_for_tuples::impl_for_tuples(5)]
+impl<AccountId> TransferAll<AccountId> for Tuple {
+	#[transactional]
+	fn transfer_all(source: &AccountId, dest: &AccountId) -> DispatchResult {
+		for_tuples!( #( {
+			Tuple::transfer_all(source, dest)?;
+		} )* );
+		Ok(())
+	}
 }

@@ -21,20 +21,16 @@ use sp_runtime::{
 	DispatchError, DispatchResult,
 };
 
-mod default_weight;
 mod mock;
 mod tests;
+mod weights;
 
 pub use module::*;
+pub use weights::WeightInfo;
 
 #[frame_support::pallet]
 pub mod module {
 	use super::*;
-
-	pub trait WeightInfo {
-		fn bid_collateral_auction() -> Weight;
-		fn on_finalize(c: u32) -> Weight;
-	}
 
 	#[pallet::config]
 	pub trait Config: frame_system::Config {
@@ -119,11 +115,7 @@ pub mod module {
 		/// The dispatch origin for this call must be `Signed` by the
 		/// transactor.
 		#[pallet::weight(T::WeightInfo::bid_collateral_auction())]
-		pub fn bid(
-			origin: OriginFor<T>,
-			id: T::AuctionId,
-			#[pallet::compact] value: T::Balance,
-		) -> DispatchResultWithPostInfo {
+		pub fn bid(origin: OriginFor<T>, id: T::AuctionId, #[pallet::compact] value: T::Balance) -> DispatchResult {
 			let from = ensure_signed(origin)?;
 
 			Auctions::<T>::try_mutate_exists(id, |auction| -> DispatchResult {
@@ -160,7 +152,7 @@ pub mod module {
 			})?;
 
 			Self::deposit_event(Event::Bid(id, from, value));
-			Ok(().into())
+			Ok(())
 		}
 	}
 }

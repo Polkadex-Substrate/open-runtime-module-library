@@ -21,11 +21,10 @@ fn should_feed_values_from_member() {
 				.pays_fee,
 			Pays::No
 		);
-
-		let new_feed_data_event = Event::oracle(crate::Event::NewFeedData(1, vec![(50, 1000), (51, 900), (52, 800)]));
-		assert!(System::events()
-			.iter()
-			.any(|record| record.event == new_feed_data_event));
+		System::assert_last_event(Event::ModuleOracle(crate::Event::NewFeedData(
+			1,
+			vec![(50, 1000), (51, 900), (52, 800)],
+		)));
 
 		assert_eq!(
 			ModuleOracle::raw_values(&account_id, &50),
@@ -93,11 +92,11 @@ fn should_feed_values_from_root() {
 fn should_update_is_updated() {
 	new_test_ext().execute_with(|| {
 		let key: u32 = 50;
-		assert_eq!(ModuleOracle::is_updated(key), false);
+		assert!(!ModuleOracle::is_updated(key));
 		assert_ok!(ModuleOracle::feed_values(Origin::signed(1), vec![(key, 1000)]));
 		assert_ok!(ModuleOracle::feed_values(Origin::signed(2), vec![(key, 1000)]));
 		assert_ok!(ModuleOracle::feed_values(Origin::signed(3), vec![(key, 1000)]));
-		assert_eq!(ModuleOracle::is_updated(key), false);
+		assert!(!ModuleOracle::is_updated(key));
 		assert_eq!(
 			ModuleOracle::get(&key).unwrap(),
 			TimestampedValue {
@@ -105,10 +104,10 @@ fn should_update_is_updated() {
 				timestamp: 12345
 			}
 		);
-		assert_eq!(ModuleOracle::is_updated(key), true);
+		assert!(ModuleOracle::is_updated(key));
 		ModuleOracle::on_finalize(1);
 		assert_ok!(ModuleOracle::feed_values(Origin::signed(1), vec![(key, 1000)]));
-		assert_eq!(ModuleOracle::is_updated(key), false);
+		assert!(!ModuleOracle::is_updated(key));
 	});
 }
 
@@ -238,6 +237,7 @@ fn get_all_values_should_work() {
 #[test]
 fn change_member_should_work() {
 	new_test_ext().execute_with(|| {
+		OracleMembers::set(vec![2, 3, 4]);
 		<ModuleOracle as ChangeMembers<AccountId>>::change_members_sorted(&[4], &[1], &[2, 3, 4]);
 		assert_noop!(
 			ModuleOracle::feed_values(Origin::signed(1), vec![(50, 1000)]),
@@ -262,11 +262,11 @@ fn should_clear_is_updated_on_change_member() {
 				timestamp: 12345
 			}
 		);
-		assert_eq!(ModuleOracle::is_updated(50), true);
+		assert!(ModuleOracle::is_updated(50));
 
 		ModuleOracle::change_members_sorted(&[4], &[1], &[2, 3, 4]);
 
-		assert_eq!(ModuleOracle::is_updated(50), false);
+		assert!(!ModuleOracle::is_updated(50));
 	});
 }
 
