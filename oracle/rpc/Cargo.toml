@@ -7,12 +7,12 @@ license = "Apache-2.0"
 description = "RPC module for orml-oracle."
 
 [dependencies]
-codec = { package = "parity-scale-codec", version = "2.2.0" }
+codec = { package = "parity-scale-codec", version = "3.0.0" }
 jsonrpc-core = "15.0.0"
 jsonrpc-core-client = "15.0.0"
 jsonrpc-derive = "15.0.0"
-sp-runtime = { git = "https://github.com/Polkadex-Substrate/substrate", branch = "master" }
-sp-api = { git = "https://github.com/Polkadex-Substrate/substrate", branch = "master" }
-sp-blockchain = { git = "https://github.com/Polkadex-Substrate/substrate", branch = "master" }
+sp-runtime = { git = "https://github.com/paritytech/substrate", branch = "polkadot-v0.9.19" }
+sp-api = { git = "https://github.com/paritytech/substrate", branch = "polkadot-v0.9.19" }
+sp-blockchain = { git = "https://github.com/paritytech/substrate", branch = "polkadot-v0.9.19" }
 
 orml-oracle-rpc-runtime-api = { path = "runtime-api", version = "0.4.1-dev" }

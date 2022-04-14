@@ -1,11 +1,12 @@
 use codec::{Decode, Encode};
 use frame_support::{traits::Get, BoundedVec, DefaultNoBound};
 use sp_std::convert::TryInto;
+
 #[cfg(feature = "std")]
 use sp_std::{fmt, prelude::*};
 
 /// An ordered set backed by `BoundedVec`
-#[derive(PartialEq, Eq, Encode, Decode, DefaultNoBound, Clone)]
+#[derive(Encode, Decode, DefaultNoBound, Clone)]
 pub struct OrderedSet<T, S>(pub BoundedVec<T, S>);
 
 impl<T: Ord, S: Get<u32>> OrderedSet<T, S> {
