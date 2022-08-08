@@ -21,8 +21,6 @@ frame-system = { git = "https://github.com/paritytech/substrate", branch = "polk
 orml-traits = { path = "../traits", version = "0.4.1-dev", default-features = false }
 orml-utilities = { path = "../utilities", version = "0.4.1-dev", default-features = false }
 
-syn = "=1.0.96" # TODO: Remove this as soon as frame-support-procedural-tools becomes compilable with latest syn version
-
 [dev-dependencies]
 sp-core = { git = "https://github.com/paritytech/substrate", branch = "polkadot-v0.9.27" }
 pallet-balances = { git = "https://github.com/paritytech/substrate", branch = "polkadot-v0.9.27" }
