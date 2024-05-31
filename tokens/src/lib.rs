@@ -1858,6 +1858,7 @@ impl<T: Config> fungibles::Mutate<T::AccountId> for Pallet<T> {
 		asset_id: Self::AssetId,
 		who: &T::AccountId,
 		amount: Self::Balance,
+		preservation: Preservation,
 		// TODO: Respect precision
 		_precision: Precision,
 		// TODO: Respect fortitude
@@ -1866,8 +1867,19 @@ impl<T: Config> fungibles::Mutate<T::AccountId> for Pallet<T> {
 		let extra =
 			Self::withdraw_consequence(who, asset_id, amount, &Self::accounts(who, asset_id)).into_result(false)?;
 		let actual = amount.defensive_saturating_add(extra);
-		// allow death
-		Self::do_withdraw(asset_id, who, actual, ExistenceRequirement::AllowDeath, true).map(|_| actual)
+
+		match preservation {
+			Preservation::Expendable => {
+				// allow death
+				Self::do_withdraw(asset_id, who, actual, ExistenceRequirement::AllowDeath, true).map(|_| actual)
+			}
+			Preservation::Protect => {
+				Self::do_withdraw(asset_id, who, actual, ExistenceRequirement::KeepAlive, true).map(|_| actual)
+			}
+			Preservation::Preserve => {
+				Self::do_withdraw(asset_id, who, actual, ExistenceRequirement::KeepAlive, true).map(|_| actual)
+			}
+		}
 	}
 
 	fn transfer(
@@ -2464,11 +2476,11 @@ where
 	fn minimum_balance() -> Self::Balance {
 		<Pallet<T> as fungibles::Inspect<_>>::minimum_balance(GetCurrencyId::get())
 	}
-	fn balance(who: &T::AccountId) -> Self::Balance {
-		<Pallet<T> as fungibles::Inspect<_>>::balance(GetCurrencyId::get(), who)
-	}
 	fn total_balance(who: &T::AccountId) -> Self::Balance {
 		<Pallet<T> as fungibles::Inspect<_>>::total_balance(GetCurrencyId::get(), who)
+	}
+	fn balance(who: &T::AccountId) -> Self::Balance {
+		<Pallet<T> as fungibles::Inspect<_>>::balance(GetCurrencyId::get(), who)
 	}
 	fn reducible_balance(who: &T::AccountId, preservation: Preservation, fortitude: Fortitude) -> Self::Balance {
 		<Pallet<T> as fungibles::Inspect<_>>::reducible_balance(GetCurrencyId::get(), who, preservation, fortitude)
@@ -2492,10 +2504,11 @@ where
 	fn burn_from(
 		who: &T::AccountId,
 		amount: Self::Balance,
+		preservation: Preservation,
 		precision: Precision,
 		fortitude: Fortitude,
 	) -> Result<Self::Balance, DispatchError> {
-		<Pallet<T> as fungibles::Mutate<_>>::burn_from(GetCurrencyId::get(), who, amount, precision, fortitude)
+		<Pallet<T> as fungibles::Mutate<_>>::burn_from(GetCurrencyId::get(), who, amount, preservation,precision, fortitude)
 	}
 
 	fn transfer(
